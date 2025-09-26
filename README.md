@@ -45,7 +45,9 @@ Browse Patterns
 
 <img width="750" alt="image" src="https://github.com/user-attachments/assets/7af4fa85-2241-4fa6-ac2e-323ea432b36c" />
 
-Generate Numbers/Vectors using custom algorithm, better than the shitty studio version that doesn't work for big numbers
+Generate Numbers/Vectors using custom algorithm 
+
+(origional conscept based off the astar rust algorithm written by object-Object https://github.com/object-Object/hexnumgen-rs)
 
 <img width="400" alt="image" src="https://github.com/user-attachments/assets/d116d78f-2aba-4ff3-bcb6-84fcb0e1ed1b" />
 
