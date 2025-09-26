@@ -6,7 +6,7 @@ package com.t.hexcastingplus.client.gui;
 public class ValidationConstants {
     //Debug
     public static final boolean DEBUG = false;
-    public static final boolean DEBUG_ERROR = false;
+    public static final boolean DEBUG_ERROR = true;
 
     // Folders: No dots at start/end (Windows convention)
     public static final String FOLDER_NAME_PATTERN = "^(?![.])[^<>:\"|?*\\\\/]+(?<![.])$";
