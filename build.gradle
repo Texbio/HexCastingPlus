@@ -1,0 +1,168 @@
+buildscript {
+    repositories {
+        maven { url = 'https://maven.minecraftforge.net' }
+        maven {
+            url = 'https://repo.spongepowered.org/repository/maven-public/'
+            content { includeGroup "org.spongepowered" }
+        }
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'org.spongepowered:mixingradle:0.7-SNAPSHOT'
+    }
+}
+
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+
+apply plugin: 'org.spongepowered.mixin'
+
+group = 'com.t.hexcastingplus'
+version = '1.0.0'
+
+base {
+    archivesName = 'hexcastingplus'
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+processResources {
+    inputs.property "version", project.version
+
+    filesMatching("META-INF/mods.toml") {
+        expand "version": project.version
+    }
+}
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+
+    copyIdeResources = true
+
+    // Add Access Transformer configuration
+    accessTransformer = file('src/main/resources/META-INF/accesstransformer.cfg')
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+
+            // Fixed mixin refmap remapping
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+
+            mods {
+                hexcastingplus {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        server {
+            workingDirectory project.file('run')
+
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+
+            // Added mixin refmap remapping for server
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+
+            mods {
+                hexcastingplus {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+
+    // Add this block for Parchment
+    maven {
+        url = 'https://maven.parchmentmc.org'
+    }
+
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Modrinth"
+                url = "https://api.modrinth.com/maven"
+            }
+        }
+        forRepositories(fg.repository) // For ForgeGradle
+        filter {
+            includeGroup "maven.modrinth"
+        }
+    }
+
+    maven {
+        url = "https://cursemaven.com"
+    }
+
+    // Add BlameJared's Maven for HexCasting sources
+    maven {
+        name = "BlameJared"
+        url = "https://maven.blamejared.com"
+    }
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.2.0'
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+
+    // Use BlameJared's version with sources
+    implementation fg.deobf("at.petra-k.hexcasting:hexcasting-forge-1.20.1:0.11.2-pre-729")
+
+    // Keep other Modrinth dependencies as-is
+    implementation fg.deobf("maven.modrinth:paucal:HyBiJPtT")  // paucal 0.6.0
+    implementation fg.deobf("maven.modrinth:patchouli:8Qyw08ld")  // patchouli 1.20.1-84.1-forge
+    implementation fg.deobf("maven.modrinth:kotlin-for-forge:hmeyC41q")  // kotlin for forge 4.11.0
+    implementation fg.deobf("maven.modrinth:caelus:mRry0DgY")  // caelus 3.2.0+1.20.1
+    implementation fg.deobf("maven.modrinth:inline:H1jsvy53")  // inline 1.20.1-1.2.2-forge
+    implementation fg.deobf("maven.modrinth:cloth-config:t8TXrZvZ")  // cloth config 11.1.136+forge
+    implementation fg.deobf("maven.modrinth:pehkui:SQpqSgAE")  // pehkui 3.8.2+1.20.1-forge
+
+    //for testing environment
+    implementation fg.deobf("maven.modrinth:ferrite-core:DG5Fn9Sz")  // ferritecore 6.0.1
+    implementation fg.deobf("maven.modrinth:embeddium:UTbfe5d1")  // embeddium 0.3.31+mc1.20.1
+    implementation fg.deobf("maven.modrinth:modernfix:CixO1IdG")  // modern_fix 5.24.4+mc1.20.1
+    implementation fg.deobf("maven.modrinth:mmmmmmmmmmmm:zAahRq2q")  // mmmmmmmmmmmm 1.20-2.0.9
+    implementation fg.deobf("maven.modrinth:moonlight:sWagczEr")  // moonlight 1.20-2.16.8-forge
+}
+
+// Mixin configuration
+mixin {
+    add sourceSets.main, "hexcastingplus.refmap.json"
+    config "hexcastingplus.mixins.json"
+}
+
+jar {
+    manifest {
+        attributes([
+                "MixinConfigs": "hexcastingplus.mixins.json"
+        ])
+    }
+
+    finalizedBy 'reobfJar'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+// Force recompilation to ensure refmap generation
+build {
+    println "Forcing re-compile of Java to include refmap"
+    tasks.withType(JavaCompile) {
+        outputs.upToDateWhen { false }
+    }
+}

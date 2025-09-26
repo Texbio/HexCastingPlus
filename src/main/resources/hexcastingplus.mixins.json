@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.t.hexcastingplus.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "hexcastingplus.refmap.json",
+  "client": [
+    "ClearPatternsMixin",
+    "ChatMixin",
+    "StaffGuiMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

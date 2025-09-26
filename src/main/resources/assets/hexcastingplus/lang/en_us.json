@@ -1,0 +1,10 @@
+{
+  "gui.hexcastingplus.pattern_manager": "Pattern Manager",
+  "gui.hexcastingplus.save": "Save Pattern",
+  "gui.hexcastingplus.load": "Load Pattern",
+  "gui.hexcastingplus.clear": "Clear Staff",
+  "gui.hexcastingplus.numbers": "Number Input",
+  "gui.hexcastingplus.confirm_clear": "Are you sure you want to clear the staff?",
+  "key.hexcastingplus.open_manager": "Open Pattern Manager",
+  "key.categories.hexcastingplus": "HexCasting Plus"
+}

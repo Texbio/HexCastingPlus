@@ -1,0 +1,72 @@
+# eclipse
+bin
+*.launch
+.settings
+.metadata
+.classpath
+.project
+
+# idea
+out
+*.ipr
+*.iws
+*.iml
+.idea
+
+# gradle
+build
+.gradle
+
+# other
+eclipse
+run
+
+# Files from Forge MDK
+forge*changelog.txt
+
+# Additional useful entries:
+
+# Minecraft runs
+runs/
+run-data/
+logs/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+
+# Gradle cache
+gradle-app.setting
+!gradle-wrapper.jar
+.gradletasknamecache
+
+# VS Code
+.vscode/
+
+# Private/local configuration
+local.properties
+secrets.properties
+*.private
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Compiled files
+*.class
+*.jar
+# But allow gradle wrapper jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# Temporary files
+*.tmp
+*.temp
+.temp/
+.tmp/

@@ -1,0 +1,36 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="MIT"
+
+[[mods]]
+modId="hexcastingplus"
+version="${version}"
+displayName="HexCasting Plus"
+logoFile="icon.png"
+authors="t"
+side="CLIENT"
+description='''
+Pattern management and enhancement mod for Hex Casting.
+Save, load, and manage your hex patterns with ease :P
+'''
+
+[[dependencies.hexcastingplus]]
+modId="forge"
+mandatory=true
+versionRange="[47,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.hexcastingplus]]
+modId="minecraft"
+mandatory=true
+versionRange="[1.20.1,1.21)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.hexcastingplus]]
+modId="hexcasting"
+mandatory=true
+versionRange="[0.11.1,)"
+ordering="AFTER"
+side="BOTH"
