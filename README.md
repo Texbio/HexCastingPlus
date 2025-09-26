@@ -4,7 +4,7 @@ HexCastingPlus 1.20.1 forge pattern addon for saving and loading client side wit
 
 - Hex Pattern Library doesn't currently have addon support (patterns will still save and load).
 
-- Great patterns need to be bruteforced before they can be used, sorry if you have a bad pc.
+- Great patterns need to be bruteforced before they can be used or drawn and pasted in the file, then relaunch game (will fix if I ever work on the project again)
 
 - Will probably not update even though it has many bugs/missing features, for now you can leave them in the issues section
 
