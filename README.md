@@ -1,6 +1,6 @@
 HexCastingPlus 1.20.1 forge pattern addon for saving and loading client side with more features 
 
-- Made with Claude Opus 4.1 (best coding ai, costs money to use)
+- Made with Claude Opus 4.1 (it got significantly worse and can no longer recommend it https://llm-stats.com/)
 
 - Hex Pattern Library doesn't currently have addon support (patterns will still save and load).
 
