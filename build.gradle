@@ -22,7 +22,7 @@ plugins {
 apply plugin: 'org.spongepowered.mixin'
 
 group = 'com.t.hexcastingplus'
-version = '1.0.0'
+version = '1.0.1'
 
 base {
     archivesName = 'hexcastingplus'

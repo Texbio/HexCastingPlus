@@ -1,5 +1,7 @@
 package com.t.hexcastingplus.client.bruteforce;
 
+import com.t.hexcastingplus.client.config.HexCastingPlusClientConfig;
+import com.t.hexcastingplus.client.greatspells.GreatSpellCache;
 import at.petrak.hexcasting.api.casting.ActionRegistryEntry;
 import at.petrak.hexcasting.api.casting.eval.ResolvedPatternType;
 import at.petrak.hexcasting.api.casting.math.EulerPathFinder;
@@ -16,6 +18,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 
+
 import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +31,7 @@ public class BruteforceManager {
     // Configuration
     private static final int MAX_SEEDS = 200000;
     private static final long MATCH_WAIT_TIME = 500;
+    private long currentSeedOffset = 0;
 
     // State tracking
     private static boolean isBruteforcing = false;
@@ -112,7 +116,7 @@ public class BruteforceManager {
             HexDir startDir = HexDir.valueOf(dirName);
             return HexPattern.fromAngles(angles, startDir);
         } catch (Exception e) {
-            System.err.println("[BRUTEFORCE] Failed to convert signature to pattern: " + e.getMessage());
+            System.err.println("[HexCasting+] Bruteforce - Failed to convert signature to pattern: " + e.getMessage());
             return null;
         }
     }
@@ -167,9 +171,9 @@ public class BruteforceManager {
                         if (registry.getHolderOrThrow(key).is(HexTags.Actions.PER_WORLD_PATTERN)) {
                             if (!foundPatternsCache.containsKey(patternName)) {
                                 perWorldPatterns.add(key);
-                                System.out.println("[BRUTEFORCE] Targeting: " + patternName);
+                                System.out.println("[HexCasting+] Bruteforce - Targeting: " + patternName);
                             } else {
-                                System.out.println("[BRUTEFORCE] Pattern already solved: " + patternName);
+                                System.out.println("[HexCasting+] Bruteforce - Pattern already solved: " + patternName);
                                 reloadCache();
                             }
                         }
@@ -200,16 +204,16 @@ public class BruteforceManager {
 
         if (perWorldPatterns.isEmpty()) {
             if (targetPatternName != null) {
-                System.out.println("[BRUTEFORCE] Target pattern already solved or not found");
+                System.out.println("[HexCasting+] Bruteforce - Target pattern already solved or not found");
             } else {
-                System.out.println("[BRUTEFORCE] All patterns already found in cache or no patterns available");
+                System.out.println("[HexCasting+] Bruteforce - All patterns already found in cache or no patterns available");
             }
             targetPatternName = null;
             return;
         }
 
-        System.out.println("[BRUTEFORCE] Starting - " + perWorldPatterns.size() + " pattern(s) to find");
-        System.out.println("[BRUTEFORCE] " + foundPatternsCache.size() + " patterns already cached");
+        System.out.println("[HexCasting+] Bruteforce - Starting - " + perWorldPatterns.size() + " pattern(s) to find");
+        System.out.println("[HexCasting+] Bruteforce - " + foundPatternsCache.size() + " patterns already cached");
 
         isBruteforcing = true;
         bruteforceAttempts = 0;
@@ -225,11 +229,11 @@ public class BruteforceManager {
 
     public void bruteforceSpecificPattern(String patternName) {
         if (isBruteforcing) {
-            System.out.println("[BRUTEFORCE] Already running, cannot start targeted bruteforce");
+            System.out.println("[HexCasting+] Bruteforce - Already running, cannot start targeted bruteforce");
             return;
         }
 
-        System.out.println("[BRUTEFORCE] Starting targeted bruteforce for: " + patternName);
+        System.out.println("[HexCasting+] Bruteforce - Starting targeted bruteforce for: " + patternName);
         targetPatternName = patternName;
         startBruteforce();
     }
@@ -242,7 +246,7 @@ public class BruteforceManager {
             bruteforceButton.setMessage(Component.literal("B"));
         }
 
-        System.out.println("[BRUTEFORCE] Stopped");
+        System.out.println("[HexCasting+] Bruteforce - Stopped");
         System.out.println("  Total attempts: " + bruteforceAttempts);
         System.out.println("  Total patterns cached: " + foundPatternsCache.size());
 
@@ -251,7 +255,7 @@ public class BruteforceManager {
         currentSignature = null;
 
         if (targetPatternName != null) {
-            System.out.println("[BRUTEFORCE] Clearing target pattern: " + targetPatternName);
+            System.out.println("[HexCasting+] Bruteforce - Clearing target pattern: " + targetPatternName);
             targetPatternName = null;
             reloadCache();
         }
@@ -312,7 +316,7 @@ public class BruteforceManager {
             if (!foundMatch) {
                 foundMatch = true;
                 matchFoundTime = System.currentTimeMillis();
-                System.out.println("[BRUTEFORCE] Match found! Waiting for delayed responses...");
+                System.out.println("[HexCasting+] Bruteforce - Match found! Waiting for delayed responses...");
             }
 
             successfulSequences.add(sequenceCounter);
@@ -329,7 +333,7 @@ public class BruteforceManager {
     }
 
     private void sortPatternsByComplexity() {
-        System.out.println("[BRUTEFORCE] Analyzing pattern complexity...");
+        System.out.println("[HexCasting+] Bruteforce - Analyzing pattern complexity...");
         Map<ResourceKey<ActionRegistryEntry>, Integer> patternComplexity = new HashMap<>();
         var registry = IXplatAbstractions.INSTANCE.getActionRegistry();
 
@@ -371,7 +375,7 @@ public class BruteforceManager {
 
     private void loadCurrentPattern() {
         if (currentPatternIndex >= perWorldPatterns.size()) {
-            System.out.println("[BRUTEFORCE] Complete - all patterns processed");
+            System.out.println("[HexCasting+] Bruteforce - Complete - all patterns processed");
 
             // Delay clearing the stack by 500ms
             scheduler.schedule(() -> {
@@ -396,7 +400,7 @@ public class BruteforceManager {
             generateUniqueSignatures();
             signaturesTriedCount = 0;
 
-            System.out.println("[BRUTEFORCE] Testing: " + currentBruteforceName +
+            System.out.println("[HexCasting+] Bruteforce - Testing: " + currentBruteforceName +
                     " with " + totalSignaturesCount + " unique signatures");
 
             tryNextSignature();
@@ -410,7 +414,13 @@ public class BruteforceManager {
         currentPatternSignatures.clear();
         signaturesTriedCount = 0;
 
-        for (long seed = 0; seed < MAX_SEEDS; seed++) {
+        // Start with a smaller number and increase if needed
+        int initialSeeds = 10000; // Start with 10k instead of 200k
+        int maxBatches = 20; // Max 20 batches of 10k each
+        int batchSize = 10000;
+
+        // Generate initial batch
+        for (long seed = 0; seed < initialSeeds; seed++) {
             try {
                 HexPattern variant = EulerPathFinder.findAltDrawing(currentBruteforcePattern, seed);
                 String signature = variant.anglesSignature() + "," + variant.getStartDir().name();
@@ -424,7 +434,41 @@ public class BruteforceManager {
         signatureIterator = currentPatternSignatures.iterator();
 
         System.out.println("[BRUTEFORCE] Generated " + totalSignaturesCount +
-                " unique signatures from " + MAX_SEEDS + " seeds");
+                " unique signatures from " + initialSeeds + " seeds");
+
+        // Store the seed offset for potential batch generation
+        currentSeedOffset = initialSeeds;
+    }
+
+    private void generateAdditionalSignatures() {
+        if (currentSeedOffset >= MAX_SEEDS) {
+            System.out.println("[BRUTEFORCE] Reached maximum seed limit");
+            return;
+        }
+
+        int batchSize = 10000;
+        long endSeed = Math.min(currentSeedOffset + batchSize, MAX_SEEDS);
+
+        Set<String> newSignatures = new HashSet<>();
+        for (long seed = currentSeedOffset; seed < endSeed; seed++) {
+            try {
+                HexPattern variant = EulerPathFinder.findAltDrawing(currentBruteforcePattern, seed);
+                String signature = variant.anglesSignature() + "," + variant.getStartDir().name();
+                if (!currentPatternSignatures.contains(signature)) {
+                    newSignatures.add(signature);
+                }
+            } catch (Exception e) {
+                // Skip failed generations
+            }
+        }
+
+        currentPatternSignatures.addAll(newSignatures);
+        totalSignaturesCount = currentPatternSignatures.size();
+        signatureIterator = currentPatternSignatures.iterator();
+        currentSeedOffset = endSeed;
+
+        System.out.println("[BRUTEFORCE] Generated " + newSignatures.size() +
+                " additional unique signatures (total: " + totalSignaturesCount + ")");
     }
 
     private void tryNextSignature() {
@@ -446,9 +490,24 @@ public class BruteforceManager {
         }
 
         if (!signatureIterator.hasNext()) {
-            System.out.println("[BRUTEFORCE] Exhausted all signatures for " + currentBruteforceName);
-            moveToNextPattern();
-            return;
+            // Try to generate more signatures before giving up
+            if (currentSeedOffset < MAX_SEEDS && currentPatternSignatures.size() < 50000) {
+                System.out.println("[BRUTEFORCE] Generating additional signatures...");
+                generateAdditionalSignatures();
+
+                // If we got new signatures, continue
+                if (signatureIterator.hasNext()) {
+                    // Continue with the new signatures
+                } else {
+                    System.out.println("[BRUTEFORCE] No new unique signatures found for " + currentBruteforceName);
+                    moveToNextPattern();
+                    return;
+                }
+            } else {
+                System.out.println("[BRUTEFORCE] Exhausted all signatures for " + currentBruteforceName);
+                moveToNextPattern();
+                return;
+            }
         }
 
         currentSignature = signatureIterator.next();
@@ -507,7 +566,7 @@ public class BruteforceManager {
 
     private void processMatchResults() {
         if (successfulSequences.isEmpty()) {
-            System.out.println("[BRUTEFORCE] No successful matches found, continuing...");
+            System.out.println("[HexCasting+] Bruteforce - No successful matches found, continuing...");
             foundMatch = false;
             tryNextSignature();
             return;
@@ -517,7 +576,7 @@ public class BruteforceManager {
                 .min(Integer::compareTo)
                 .orElse(-1);
 
-        System.out.println("[BRUTEFORCE] Processing " + successfulSequences.size() +
+        System.out.println("[HexCasting+] Bruteforce - Processing " + successfulSequences.size() +
                 " successful responses, earliest sequence: " + earliestSequence);
 
         SentPattern matchedPattern = null;
@@ -538,13 +597,13 @@ public class BruteforceManager {
                 cleanupAfterSuccess();
                 moveToNextPattern();
             } else {
-                System.out.println("[BRUTEFORCE] Pattern validation failed, may be Bookkeeper's Gambit, continuing...");
+                System.out.println("[HexCasting+] Bruteforce - Pattern validation failed, may be Bookkeeper's Gambit, continuing...");
                 foundMatch = false;
                 successfulSequences.clear();
                 tryNextSignature();
             }
         } else {
-            System.out.println("[BRUTEFORCE] Could not find pattern for sequence #" + earliestSequence + ", continuing...");
+            System.out.println("[HexCasting+] Bruteforce - Could not find pattern for sequence #" + earliestSequence + ", continuing...");
             foundMatch = false;
             successfulSequences.clear();
             tryNextSignature();
@@ -572,13 +631,13 @@ public class BruteforceManager {
                 }
             }
             if (allSame) {
-                System.out.println("[BRUTEFORCE] Rejecting pattern - appears to be Bookkeeper's Gambit");
+                System.out.println("[HexCasting+] Bruteforce - Rejecting pattern - appears to be Bookkeeper's Gambit");
                 return false;
             }
         }
 
         if (sig.length() < 4 || sig.length() > 50) {
-            System.out.println("[BRUTEFORCE] Rejecting pattern - unusual length: " + sig.length());
+            System.out.println("[HexCasting+] Bruteforce - Rejecting pattern - unusual length: " + sig.length());
             return false;
         }
 
@@ -633,7 +692,7 @@ public class BruteforceManager {
 
     private void clearStacks(boolean all) {
         if (currentStaffGui == null) {
-            System.out.println("[BRUTEFORCE] clearStacks - no staff GUI available");
+            System.out.println("[HexCasting+] Bruteforce - clearStacks - no staff GUI available");
             return;
         }
 
@@ -642,7 +701,7 @@ public class BruteforceManager {
         int stackSize = currentStack.size();
 
         if (stackSize == 0) {
-            System.out.println("[BRUTEFORCE] clearStacks - stack empty, nothing to clear");
+            System.out.println("[HexCasting+] Bruteforce - clearStacks - stack empty, nothing to clear");
             return;
         }
 
@@ -652,7 +711,7 @@ public class BruteforceManager {
         } else {
             toClear = stackSize - 1; // Clear all but one item
             if (toClear <= 0) {
-                System.out.println("[BRUTEFORCE] clearStacks - nothing to clear (toClear=" + toClear + ")");
+                System.out.println("[HexCasting+] Bruteforce - clearStacks - nothing to clear (toClear=" + toClear + ")");
                 return;
             }
         }
@@ -731,10 +790,9 @@ public class BruteforceManager {
 
     private void saveToCache(String patternName, String angleSignature) {
         try {
-            Path configDir = Minecraft.getInstance().gameDirectory.toPath()
-                    .resolve("config")
-                    .resolve("hexcastingplus")
-                    .resolve("bruteforce");
+            // Use centralized config for path
+            Path configDir = HexCastingPlusClientConfig.getModDirectory()
+                    .resolve(HexCastingPlusClientConfig.GREAT_SPELLS_FOLDER);
             Files.createDirectories(configDir);
 
             String fileName = getCacheFileName();
@@ -778,7 +836,7 @@ public class BruteforceManager {
 
             reloadCache();
         } catch (Exception e) {
-            System.err.println("[BRUTEFORCE] Failed to save to cache: " + e.getMessage());
+            System.err.println("[HexCasting+] Bruteforce - Failed to save to cache: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -787,10 +845,9 @@ public class BruteforceManager {
         if (cacheLoaded) return;
 
         try {
-            Path configDir = Minecraft.getInstance().gameDirectory.toPath()
-                    .resolve("config")
-                    .resolve("hexcastingplus")
-                    .resolve("bruteforce");
+            // Use centralized config for path
+            Path configDir = HexCastingPlusClientConfig.getModDirectory()
+                    .resolve(HexCastingPlusClientConfig.GREAT_SPELLS_FOLDER);
             Files.createDirectories(configDir);
 
             String fileName = getCacheFileName();
@@ -810,14 +867,14 @@ public class BruteforceManager {
                         foundPatternsCache.put(parts[0].trim(), parts[1].trim());
                     }
                 }
-                System.out.println("[BRUTEFORCE] Loaded " + foundPatternsCache.size() + " cached patterns from " + fileName);
+                System.out.println("[HexCasting+] Bruteforce - Loaded " + foundPatternsCache.size() + " cached patterns from " + fileName);
             } else {
-                System.out.println("[BRUTEFORCE] No cache file found, starting fresh: " + fileName);
+                System.out.println("[HexCasting+] Bruteforce - No cache file found, starting fresh: " + fileName);
             }
 
             cacheLoaded = true;
         } catch (Exception e) {
-            System.err.println("[BRUTEFORCE] Failed to load cache: " + e.getMessage());
+            System.err.println("[HexCasting+] Bruteforce - Failed to load cache: " + e.getMessage());
             e.printStackTrace();
         }
     }

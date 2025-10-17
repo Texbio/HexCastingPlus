@@ -1,5 +1,6 @@
 package com.t.hexcastingplus.common.pattern;
 
+import com.t.hexcastingplus.client.config.HexCastingPlusClientConfig;
 import at.petrak.hexcasting.api.casting.math.HexDir;
 import at.petrak.hexcasting.api.casting.math.HexPattern;
 import at.petrak.hexcasting.client.gui.GuiSpellcasting;
@@ -34,6 +35,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.nio.file.StandardCopyOption;
 import java.nio.charset.StandardCharsets;
 
+import static com.t.hexcastingplus.client.config.HexCastingPlusClientConfig.FOLDER_ORDER_FILE;
+import static com.t.hexcastingplus.client.config.HexCastingPlusClientConfig.getPatternsDirectory;
+
 public class PatternStorage {
     /**
      * Provides a safe way to call methods added by StaffGuiMixin without using reflection.
@@ -42,13 +46,6 @@ public class PatternStorage {
         void hexcastingplus$loadPattern(HexPattern pattern);
         net.minecraft.world.InteractionHand hexcastingplus$getHandUsed();
     }
-
-    private static final String PATTERNS_FOLDER = "hexcasting_patterns";
-    private static final String CONFIG_FILE = "hexcastingplus_config.json";
-    private static final String FAVORITES_FILE = "favorites.json";
-    private static final String PATTERN_ORDER_FILE = "pattern_order.json";
-    public static final String TRASH_FOLDER = ".trash";
-    public static final String CASTED_FOLDER = ".casted";
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static String lastUsedFolder = "default";
@@ -437,7 +434,7 @@ public class PatternStorage {
             Files.write(filePath, lines, StandardCharsets.UTF_8);
             if (ValidationConstants.DEBUG) {System.out.println("[PatternStorage] Save complete");}
 
-            if (!folder.equals(TRASH_FOLDER) && !folder.equals(CASTED_FOLDER)) {
+            if (!folder.equals(HexCastingPlusClientConfig.TRASH_FOLDER) && !folder.equals(HexCastingPlusClientConfig.CASTED_FOLDER)) {
                 Map<String, List<String>> orderMap = loadPatternOrder();
                 List<String> order = orderMap.getOrDefault(folder, new ArrayList<>());
 
@@ -462,6 +459,9 @@ public class PatternStorage {
     }
 
     public static List<SavedPattern> getSavedPatterns(String folder) {
+        // Start a new error context for this folder load
+        PatternErrorHandler.startNewContext("folder:" + folder);
+
         // try once per game load
         if (!migrationComplete) {
             migrateOldPatternFiles();
@@ -488,6 +488,8 @@ public class PatternStorage {
                     .filter(path -> path.toString().endsWith(".hexpattern"))
                     .forEach(path -> {
                         try {
+                            String fileName = path.getFileName().toString();
+
                             List<String> lines = Files.readAllLines(path);
                             List<HexPattern> loadedPatterns = new ArrayList<>();
 
@@ -499,8 +501,8 @@ public class PatternStorage {
                                     continue;
                                 }
 
-                                // Parse the line
-                                List<HexPattern> parsedPatterns = PatternResolver.parsePattern(trimmed);
+                                // Parse the line with filename context
+                                List<HexPattern> parsedPatterns = PatternResolver.parsePattern(trimmed, fileName);
                                 if (parsedPatterns != null) {
                                     loadedPatterns.addAll(parsedPatterns);
                                 } else {
@@ -509,19 +511,20 @@ public class PatternStorage {
                                     if (pattern != null) {
                                         loadedPatterns.add(pattern);
                                     } else {
-                                        System.out.println("[PatternStorage] Failed to parse line: " + trimmed);
+                                        // Report parse error using centralized handler
+                                        PatternErrorHandler.reportParseError(fileName, trimmed);
                                     }
                                 }
                             }
 
                             if (!loadedPatterns.isEmpty()) {
-                                String fileName = path.getFileName().toString();
                                 String name = fileName.endsWith(".hexpattern") ?
                                         fileName.substring(0, fileName.length() - 11) : fileName;
 
                                 SavedPattern savedPattern = new SavedPattern(name, loadedPatterns, folder);
 
-                                if (folder.equals(TRASH_FOLDER) || folder.equals(CASTED_FOLDER)) {
+                                if (folder.equals(HexCastingPlusClientConfig.TRASH_FOLDER) ||
+                                        folder.equals(HexCastingPlusClientConfig.CASTED_FOLDER)) {
                                     try {
                                         long modTime = Files.getLastModifiedTime(path).toMillis();
                                         savedPattern.setModifiedTime(modTime);
@@ -533,8 +536,11 @@ public class PatternStorage {
                                 patterns.add(savedPattern);
                             }
                         } catch (Exception e) {
-                            if (ValidationConstants.DEBUG_ERROR) {System.out.println("DEBUG: Error reading pattern file: " + path.getFileName() + " - " + e.getMessage());}
-                            e.printStackTrace();
+                            // Only show file read errors in debug mode
+                            if (ValidationConstants.DEBUG_ERROR) {
+                                System.out.println("[PatternStorage] Error reading file: " +
+                                        path.getFileName() + " - " + e.getMessage());
+                            }
                         }
                     });
         } catch (IOException e) {
@@ -542,7 +548,8 @@ public class PatternStorage {
         }
 
         // Ensure all loaded patterns are in the pattern order
-        if (!folder.equals(TRASH_FOLDER) && !folder.equals(CASTED_FOLDER)) {
+        if (!folder.equals(HexCastingPlusClientConfig.TRASH_FOLDER) &&
+                !folder.equals(HexCastingPlusClientConfig.CASTED_FOLDER)) {
             Map<String, List<String>> orderMap = loadPatternOrder();
             List<String> order = orderMap.getOrDefault(folder, new ArrayList<>());
             boolean changed = false;
@@ -652,7 +659,8 @@ public class PatternStorage {
                             if (ValidationConstants.DEBUG) {System.out.println("  Converted: " + trimmed + " -> " + resolved);}
                         } else {
                             newLines.add(trimmed);
-                            if (ValidationConstants.DEBUG_ERROR) {System.out.println("  WARNING: Couldn't resolve pattern: " + trimmed);}
+                            //we need to find a better solution than spamming the user that we couldn't resolve patterns
+//                            if (ValidationConstants.DEBUG_ERROR) {System.out.println("  WARNING: Couldn't resolve pattern: " + trimmed);}
                         }
                     } catch (Exception e) {
                         newLines.add(line);
@@ -726,10 +734,45 @@ public class PatternStorage {
         loadFavoritesCache();
     }
 
+    /**
+     * Get the ordered list of folders
+     */
+    public static List<String> getFolderOrder() {
+        try {
+            Path orderFile = getPatternsDirectory().resolve(FOLDER_ORDER_FILE);
+            if (Files.exists(orderFile)) {
+                String json = Files.readString(orderFile);
+                Type listType = new TypeToken<List<String>>(){}.getType();
+                List<String> order = GSON.fromJson(json, listType);
+                return order != null ? order : new ArrayList<>();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return new ArrayList<>();
+    }
+
+    /**
+     * Save the folder order
+     */
+    public static void saveFolderOrder(List<String> folderOrder) {
+        try {
+            Path orderFile = getPatternsDirectory().resolve(FOLDER_ORDER_FILE);
+            Files.createDirectories(orderFile.getParent());
+
+            // Filter out "default" as it's always first
+            List<String> filtered = new ArrayList<>(folderOrder);
+            filtered.remove("default");
+
+            Files.writeString(orderFile, GSON.toJson(filtered));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
     private static void loadFavoritesCache() {
         try {
-            Path favoritesPath = getPatternsDir().resolve(FAVORITES_FILE);
+            Path favoritesPath = getPatternsDir().resolve(HexCastingPlusClientConfig.FAVORITES_FILE);
             if (Files.exists(favoritesPath)) {
                 String json = Files.readString(favoritesPath);
                 Type type = new TypeToken<Map<String, Boolean>>(){}.getType();
@@ -752,7 +795,7 @@ public class PatternStorage {
             // Clean up before saving
             cleanupFavoritesCache();
 
-            Path favoritesPath = getPatternsDir().resolve(FAVORITES_FILE);
+            Path favoritesPath = getPatternsDir().resolve(HexCastingPlusClientConfig.FAVORITES_FILE);
             ensureDirectoryExists(getPatternsDir());
             Files.writeString(favoritesPath, GSON.toJson(favoritesCache));
         } catch (Exception e) {
@@ -811,7 +854,7 @@ public class PatternStorage {
     public static Map<String, List<String>> loadPatternOrder() {
         Map<String, List<String>> order = new HashMap<>();
         try {
-            Path orderPath = getPatternsDir().resolve(PATTERN_ORDER_FILE);
+            Path orderPath = getPatternsDir().resolve(HexCastingPlusClientConfig.PATTERN_ORDER_FILE);
             if (Files.exists(orderPath)) {
                 String json = Files.readString(orderPath);
                 Type type = new TypeToken<Map<String, List<String>>>(){}.getType();
@@ -828,7 +871,7 @@ public class PatternStorage {
 
     public static void savePatternOrder(Map<String, List<String>> patternOrder) {
         try {
-            Path orderPath = getPatternsDir().resolve(PATTERN_ORDER_FILE);
+            Path orderPath = getPatternsDir().resolve(HexCastingPlusClientConfig.PATTERN_ORDER_FILE);
             ensureDirectoryExists(getPatternsDir());
             Files.writeString(orderPath, GSON.toJson(patternOrder));
         } catch (Exception e) {
@@ -836,9 +879,6 @@ public class PatternStorage {
             e.printStackTrace();
         }
     }
-
-    // PatternEditScreen Methods
-
 
     public static class PatternLine {
         private final String rawLine;
@@ -927,7 +967,7 @@ public class PatternStorage {
 
     private static void loadConfig() {
         try {
-            Path configPath = getPatternsDir().resolve(CONFIG_FILE);
+            Path configPath = getPatternsDir().resolve(HexCastingPlusClientConfig.PATTERNS_CONFIG_FILE);
             if (Files.exists(configPath)) {
                 String json = Files.readString(configPath);
                 config = GSON.fromJson(json, Config.class);
@@ -947,7 +987,7 @@ public class PatternStorage {
     private static void saveConfig() {
         try {
             config.lastUsedFolder = lastUsedFolder;
-            Path configPath = getPatternsDir().resolve(CONFIG_FILE);
+            Path configPath = getPatternsDir().resolve(HexCastingPlusClientConfig.PATTERNS_CONFIG_FILE);
             ensureDirectoryExists(getPatternsDir());
             Files.writeString(configPath, GSON.toJson(config));
         } catch (Exception e) {
@@ -969,7 +1009,7 @@ public class PatternStorage {
     }
 
     private static Path getPatternsDir() {
-        return getMinecraftDir().resolve(PATTERNS_FOLDER);
+        return getPatternsDirectory();
     }
 
     private static Path getFolderDir(String folder) {
@@ -984,26 +1024,45 @@ public class PatternStorage {
         }
     }
 
+    /**
+     * Get available folders in saved order
+     */
     public static List<String> getAvailableFolders() {
         List<String> folders = new ArrayList<>();
-
-        // Always ensure default folder exists and is first
-        Path defaultFolderPath = getFolderDir("default");
-        ensureDirectoryExists(defaultFolderPath);
         folders.add("default");
 
-        Path patternsDir = getPatternsDir();
-        if (Files.exists(patternsDir)) {
-            // Use try-with-resources to ensure stream is closed
+        try {
+            Path patternsDir = getPatternsDirectory();
+            if (!Files.exists(patternsDir)) {
+                Files.createDirectories(patternsDir);
+            }
+
+            // Get all folders from disk
+            List<String> diskFolders = new ArrayList<>();
             try (var stream = Files.list(patternsDir)) {
                 stream.filter(Files::isDirectory)
                         .map(path -> path.getFileName().toString())
-                        .filter(name -> !name.equals("default") && !name.startsWith("."))
-                        .sorted()
-                        .forEach(folders::add);
-            } catch (IOException e) {
-                e.printStackTrace();
+                        .filter(name -> !name.startsWith("."))
+                        .filter(name -> !name.equals("default"))
+                        .forEach(diskFolders::add);
             }
+
+            // Load saved order
+            List<String> savedOrder = getFolderOrder();
+
+            // Add folders in saved order first
+            for (String folder : savedOrder) {
+                if (diskFolders.contains(folder)) {
+                    folders.add(folder);
+                    diskFolders.remove(folder);
+                }
+            }
+
+            // Add any remaining folders not in saved order (new folders)
+            folders.addAll(diskFolders);
+
+        } catch (Exception e) {
+            e.printStackTrace();
         }
 
         return folders;
@@ -1030,7 +1089,7 @@ public class PatternStorage {
                 // Move all patterns to trash
                 List<SavedPattern> patterns = getSavedPatterns(folderName);
                 for (SavedPattern pattern : patterns) {
-                    movePattern(pattern, TRASH_FOLDER, null);
+                    movePattern(pattern, HexCastingPlusClientConfig.TRASH_FOLDER, null);
                 }
 
                 // Delete the empty folder
@@ -1124,11 +1183,11 @@ public class PatternStorage {
     }
 
     public static List<SavedPattern> getTrashedPatterns() {
-        return getSavedPatterns(TRASH_FOLDER);
+        return getSavedPatterns(HexCastingPlusClientConfig.TRASH_FOLDER);
     }
 
     public static List<SavedPattern> getCastedPatterns() {
-        return getSavedPatterns(CASTED_FOLDER);
+        return getSavedPatterns(HexCastingPlusClientConfig.CASTED_FOLDER);
     }
 
     public static String ensureUniqueFileName(String baseName, String folder) {
@@ -1252,7 +1311,7 @@ public class PatternStorage {
                     order.set(position, finalName);
                 } else {
                     // Add based on folder type if not found
-                    if (folder.equals(TRASH_FOLDER) || folder.equals(CASTED_FOLDER)) {
+                    if (folder.equals(HexCastingPlusClientConfig.TRASH_FOLDER) || folder.equals(HexCastingPlusClientConfig.CASTED_FOLDER)) {
                         int insertPos = 0;
                         List<SavedPattern> allPatterns = getSavedPatterns(folder);
                         for (SavedPattern p : allPatterns) {
@@ -1340,7 +1399,7 @@ public class PatternStorage {
     public static void restoreFromTrash(SavedPattern pattern, String targetFolder, Integer insertionIndex) {
         try {
             String oldName = pattern.getName();
-            Path trashPath = getFolderDir(TRASH_FOLDER).resolve(sanitizeFileName(oldName) + ".hexpattern");
+            Path trashPath = getFolderDir(HexCastingPlusClientConfig.TRASH_FOLDER).resolve(sanitizeFileName(oldName) + ".hexpattern");
 
             // Ensure target folder exists
             ensureDirectoryExists(getFolderDir(targetFolder));
@@ -1351,10 +1410,10 @@ public class PatternStorage {
 
             if (Files.exists(trashPath)) {
                 // Special handling for TRASH and CASTED targets
-                if (targetFolder.equals(TRASH_FOLDER) || targetFolder.equals(CASTED_FOLDER)) {
+                if (targetFolder.equals(HexCastingPlusClientConfig.TRASH_FOLDER) || targetFolder.equals(HexCastingPlusClientConfig.CASTED_FOLDER)) {
                     // Count favorites BEFORE moving the file
                     List<SavedPattern> targetPatterns;
-                    if (targetFolder.equals(TRASH_FOLDER)) {
+                    if (targetFolder.equals(HexCastingPlusClientConfig.TRASH_FOLDER)) {
                         targetPatterns = getTrashedPatterns();
                     } else {
                         targetPatterns = getCastedPatterns();
@@ -1371,7 +1430,7 @@ public class PatternStorage {
                     Files.move(trashPath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
                     // Update favorites cache
-                    String oldKey = TRASH_FOLDER + "/" + oldName;
+                    String oldKey = HexCastingPlusClientConfig.TRASH_FOLDER + "/" + oldName;
                     if (favoritesCache.containsKey(oldKey)) {
                         String newKey = targetFolder + "/" + uniqueName;
                         favoritesCache.put(newKey, favoritesCache.remove(oldKey));
@@ -1386,9 +1445,9 @@ public class PatternStorage {
                     Map<String, List<String>> orderMap = loadPatternOrder();
 
                     // Remove from trash order
-                    List<String> trashOrder = orderMap.getOrDefault(TRASH_FOLDER, new ArrayList<>());
+                    List<String> trashOrder = orderMap.getOrDefault(HexCastingPlusClientConfig.TRASH_FOLDER, new ArrayList<>());
                     trashOrder.remove(oldName);
-                    orderMap.put(TRASH_FOLDER, trashOrder);
+                    orderMap.put(HexCastingPlusClientConfig.TRASH_FOLDER, trashOrder);
 
                     // Add to target order
                     List<String> order = new ArrayList<>(orderMap.getOrDefault(targetFolder, new ArrayList<>()));
@@ -1415,7 +1474,7 @@ public class PatternStorage {
                     Files.move(trashPath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
                     // Update favorites cache
-                    String oldKey = TRASH_FOLDER + "/" + oldName;
+                    String oldKey = HexCastingPlusClientConfig.TRASH_FOLDER + "/" + oldName;
                     if (favoritesCache.containsKey(oldKey)) {
                         String newKey = targetFolder + "/" + uniqueName;
                         favoritesCache.put(newKey, favoritesCache.remove(oldKey));
@@ -1483,10 +1542,10 @@ public class PatternStorage {
             String oldName = pattern.getName();
 
             // Handle special source folders
-            if (oldFolder.equals(CASTED_FOLDER)) {
+            if (oldFolder.equals(HexCastingPlusClientConfig.CASTED_FOLDER)) {
                 restoreFromCasted(pattern, targetFolder, insertionIndex);
                 return;
-            } else if (oldFolder.equals(TRASH_FOLDER)) {
+            } else if (oldFolder.equals(HexCastingPlusClientConfig.TRASH_FOLDER)) {
                 restoreFromTrash(pattern, targetFolder, insertionIndex);
                 return;
             }
@@ -1551,7 +1610,7 @@ public class PatternStorage {
                     completeOrder.add(insertAt, uniqueName);
                 } else {
                     // For TRASH and CASTED, new items go to top (after favorites)
-                    if (targetFolder.equals(TRASH_FOLDER) || targetFolder.equals(CASTED_FOLDER)) {
+                    if (targetFolder.equals(HexCastingPlusClientConfig.TRASH_FOLDER) || targetFolder.equals(HexCastingPlusClientConfig.CASTED_FOLDER)) {
                         // Count favorites in the completed order
                         int favoriteCount = 0;
                         for (String name : completeOrder) {
@@ -1598,7 +1657,7 @@ public class PatternStorage {
     public static void restoreFromCasted(SavedPattern pattern, String targetFolder, Integer insertionIndex) {
         try {
             String oldName = pattern.getName();
-            Path castedPath = getFolderDir(CASTED_FOLDER).resolve(sanitizeFileName(oldName) + ".hexpattern");
+            Path castedPath = getFolderDir(HexCastingPlusClientConfig.CASTED_FOLDER).resolve(sanitizeFileName(oldName) + ".hexpattern");
 
             // Ensure target folder exists
             ensureDirectoryExists(getFolderDir(targetFolder));
@@ -1609,10 +1668,10 @@ public class PatternStorage {
 
             if (Files.exists(castedPath)) {
                 // Special handling for TRASH and CASTED targets
-                if (targetFolder.equals(TRASH_FOLDER) || targetFolder.equals(CASTED_FOLDER)) {
+                if (targetFolder.equals(HexCastingPlusClientConfig.TRASH_FOLDER) || targetFolder.equals(HexCastingPlusClientConfig.CASTED_FOLDER)) {
                     // Count favorites BEFORE moving the file
                     List<SavedPattern> targetPatterns;
-                    if (targetFolder.equals(TRASH_FOLDER)) {
+                    if (targetFolder.equals(HexCastingPlusClientConfig.TRASH_FOLDER)) {
                         targetPatterns = getTrashedPatterns();
                     } else {
                         targetPatterns = getCastedPatterns();
@@ -1629,7 +1688,7 @@ public class PatternStorage {
                     Files.move(castedPath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
                     // Update favorites cache
-                    String oldKey = CASTED_FOLDER + "/" + oldName;
+                    String oldKey = HexCastingPlusClientConfig.CASTED_FOLDER + "/" + oldName;
                     if (favoritesCache.containsKey(oldKey)) {
                         String newKey = targetFolder + "/" + uniqueName;
                         favoritesCache.put(newKey, favoritesCache.remove(oldKey));
@@ -1644,9 +1703,9 @@ public class PatternStorage {
                     Map<String, List<String>> orderMap = loadPatternOrder();
 
                     // Remove from casted order
-                    List<String> castedOrder = orderMap.getOrDefault(CASTED_FOLDER, new ArrayList<>());
+                    List<String> castedOrder = orderMap.getOrDefault(HexCastingPlusClientConfig.CASTED_FOLDER, new ArrayList<>());
                     castedOrder.remove(oldName);
-                    orderMap.put(CASTED_FOLDER, castedOrder);
+                    orderMap.put(HexCastingPlusClientConfig.CASTED_FOLDER, castedOrder);
 
                     // Add to target order
                     List<String> order = new ArrayList<>(orderMap.getOrDefault(targetFolder, new ArrayList<>()));
@@ -1673,7 +1732,7 @@ public class PatternStorage {
                     Files.move(castedPath, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
                     // Update favorites cache
-                    String oldKey = CASTED_FOLDER + "/" + oldName;
+                    String oldKey = HexCastingPlusClientConfig.CASTED_FOLDER + "/" + oldName;
                     if (favoritesCache.containsKey(oldKey)) {
                         String newKey = targetFolder + "/" + uniqueName;
                         favoritesCache.put(newKey, favoritesCache.remove(oldKey));
@@ -1729,7 +1788,7 @@ public class PatternStorage {
         if (ValidationConstants.DEBUG) {System.out.println("--- PatternStorage.loadPattern: Preparing to load patterns ---");}
 
         // Set the patterns to be loaded when GUI opens
-        boolean fromCasted = CASTED_FOLDER.equals(pattern.getFolder());
+        boolean fromCasted = HexCastingPlusClientConfig.CASTED_FOLDER.equals(pattern.getFolder());
         PatternCache.setPendingPatterns(pattern.getPatterns(), fromCasted);
 
         Minecraft mc = Minecraft.getInstance();
@@ -1768,16 +1827,16 @@ public class PatternStorage {
         long timestamp = System.currentTimeMillis();
         String fileName = "Casted_" + timestamp;
 
-        savePattern(fileName, patterns, CASTED_FOLDER);
+        savePattern(fileName, patterns, HexCastingPlusClientConfig.CASTED_FOLDER);
 
         // Add pattern order management
         Map<String, List<String>> orderMap = loadPatternOrder();
-        List<String> castedOrder = new ArrayList<>(orderMap.getOrDefault(CASTED_FOLDER, new ArrayList<>()));
+        List<String> castedOrder = new ArrayList<>(orderMap.getOrDefault(HexCastingPlusClientConfig.CASTED_FOLDER, new ArrayList<>()));
 
         // Count favorites
         int favoriteCount = 0;
         for (String name : castedOrder) {
-            String key = CASTED_FOLDER + "/" + name;
+            String key = HexCastingPlusClientConfig.CASTED_FOLDER + "/" + name;
             if (favoritesCache.getOrDefault(key, false)) {
                 favoriteCount++;
             }
@@ -1785,7 +1844,7 @@ public class PatternStorage {
 
         // Insert at top (after favorites)
         castedOrder.add(favoriteCount, fileName);
-        orderMap.put(CASTED_FOLDER, castedOrder);
+        orderMap.put(HexCastingPlusClientConfig.CASTED_FOLDER, castedOrder);
         savePatternOrder(orderMap);
     }
 }

@@ -1,5 +1,6 @@
 package com.t.hexcastingplus.common.pattern;
 
+import com.t.hexcastingplus.common.pattern.PatternErrorHandler;
 import at.petrak.hexcasting.api.casting.ActionRegistryEntry;
 import at.petrak.hexcasting.api.casting.eval.SpecialPatterns;
 import at.petrak.hexcasting.api.casting.math.HexAngle;
@@ -15,6 +16,8 @@ import net.minecraft.resources.ResourceLocation;
 import java.util.*;
 
 public class PatternResolver {
+    private static Set<String> reportedErrors = new HashSet<>();
+    private static String currentParsingFile = null;
     private static Map<String, PatternInfo> patternRegistry = null;
     private static Map<String, String> specialPatternNames = new HashMap<>();
     // Add a cache for angle signature -> name mapping
@@ -42,6 +45,26 @@ public class PatternResolver {
         specialPatternNames.put("eee", "Retrospection");
         specialPatternNames.put("qqqaw", "Consideration");
         specialPatternNames.put("qqq", "Evanition");
+    }
+
+    private static HexPattern findPatternByName(String name, String filename) {
+        for (PatternInfo info : patternRegistry.values()) {
+            if (info.name.equalsIgnoreCase(name)) {
+                // Check if it's a great spell
+                if (info.isPerWorldPattern) {
+                    String solvedSig = BruteforceManager.getInstance().getSolvedSignature(info.resourceLocation);
+                    if (solvedSig != null) {
+                        return BruteforceManager.getInstance().signatureToPattern(solvedSig);
+                    } else {
+                        // Use the centralized error handler
+                        PatternErrorHandler.reportGreatSpellError(filename, name);
+                        return null;
+                    }
+                }
+                return HexPattern.fromAngles(info.signature, info.startDir);
+            }
+        }
+        return null;
     }
 
     /**
@@ -263,7 +286,7 @@ public class PatternResolver {
         return null; // Unknown pattern
     }
 
-    public static List<HexPattern> parsePattern(String line) {
+    public static List<HexPattern> parsePattern(String line, String filename) {
         if (patternRegistry == null) {
             initializeRegistry();
         }
@@ -283,11 +306,11 @@ public class PatternResolver {
 
         // 1. Check special shortcuts
         if (line.equals("{")) {
-            HexPattern pattern = findPatternByName("Introspection");
+            HexPattern pattern = findPatternByName("Introspection", filename);
             return pattern != null ? Collections.singletonList(pattern) : null;
         }
         if (line.equals("}")) {
-            HexPattern pattern = findPatternByName("Retrospection");
+            HexPattern pattern = findPatternByName("Retrospection", filename);
             return pattern != null ? Collections.singletonList(pattern) : null;
         }
 
@@ -307,14 +330,13 @@ public class PatternResolver {
                     return patterns;
                 }
             } catch (NumberFormatException e) {
-                System.out.println("[PatternResolver] Failed to parse number: " + numStr);
+                // Silent - not a valid number
             }
         } else {
             // Try to parse as just a number
             try {
                 double value = Double.parseDouble(line);
 
-                // Always use sequence approach for all numbers
                 NumberPatternGenerator.PatternSequence sequence = NumberPatternGenerator.convertToPatternSequence(value);
                 if (sequence != null && !sequence.components.isEmpty()) {
                     List<HexPattern> patterns = new ArrayList<>();
@@ -329,7 +351,7 @@ public class PatternResolver {
         }
 
         // 3. Try to find pattern by name
-        HexPattern pattern = findPatternByName(line);
+        HexPattern pattern = findPatternByName(line, filename);
         if (pattern != null) {
             return Collections.singletonList(pattern);
         }
@@ -347,8 +369,13 @@ public class PatternResolver {
             return pattern != null ? Collections.singletonList(pattern) : null;
         }
 
-        System.out.println("[PatternResolver] Failed to parse pattern: " + line);
+        // Don't report parse errors here - let PatternStorage handle it
         return null;
+    }
+
+    // Keep backward compatibility - overload without filename
+    public static List<HexPattern> parsePattern(String line) {
+        return parsePattern(line, null);
     }
 
     private static HexPattern findPatternByName(String name) {

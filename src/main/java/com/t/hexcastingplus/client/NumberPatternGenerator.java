@@ -5,15 +5,14 @@ import java.nio.file.*;
 import java.nio.charset.StandardCharsets;
 import java.math.BigDecimal;
 
+import com.t.hexcastingplus.client.config.HexCastingPlusClientConfig;
 import at.petrak.hexcasting.api.casting.math.HexDir;
+import com.t.hexcastingplus.client.gui.ValidationConstants;
 import net.minecraft.client.Minecraft;
 
 // CREDIT: https://github.com/Master-Bw3/Hex-Studio
 // https://github.com/object-Object/hexnumgen-rs
 public class NumberPatternGenerator {
-    private static final String PATTERNS_FOLDER = "hexcasting_patterns";
-    private static final String CACHE_FILE = "number-cache.csv";
-
     private static final String ADDITIVE_DISTILLATION = "waaw"; //00440
     private static final String DIVISION_DISTILLATION = "wdedw"; //002120
     private static final String MULTIPLICATIVE_DISTILLATION = "waqaw"; //204540
@@ -23,7 +22,7 @@ public class NumberPatternGenerator {
 
     // TreeMap with reverse order for highest to lowest sorting
     private static final Map<Double, String> patternCache = new TreeMap<>(Collections.reverseOrder());
-    private static boolean cacheLoaded;
+    public static boolean cacheLoaded;
 
     // Cache of problem subsequences that cause collisions
     // Key format: "context:sequence" where context is the pattern before the problematic part
@@ -629,6 +628,7 @@ public class NumberPatternGenerator {
 
                 if (result != null && Math.abs(result.value - absTarget) < 0.001) {
                     if (validateFullPattern(result.pattern)) {
+                        if (ValidationConstants.DEBUG) {System.out.println("Generated pattern for " + target + " after " + attemptCount + " attempts");}
                         return result;
                     } else {
                         identifyAndRecordCollision(initial, operations);
@@ -1074,12 +1074,12 @@ public class NumberPatternGenerator {
 
     // Cache management methods remain the same...
     private static java.nio.file.Path getPatternsDir() {
-        return Minecraft.getInstance().gameDirectory.toPath().resolve(PATTERNS_FOLDER);
+        return HexCastingPlusClientConfig.getPatternsDirectory();
     }
 
     private static void loadCache() {
         cacheLoaded = true;
-        java.nio.file.Path cacheFile = getPatternsDir().resolve(CACHE_FILE);
+        java.nio.file.Path cacheFile = getPatternsDir().resolve(HexCastingPlusClientConfig.NUMBER_CACHE_FILE);
         if (!Files.exists(cacheFile)) {
             System.out.println("Cache file does not exist: " + cacheFile);
             return;
@@ -1109,7 +1109,7 @@ public class NumberPatternGenerator {
     }
 
     private static void saveCache() {
-        java.nio.file.Path cacheFile = getPatternsDir().resolve(CACHE_FILE);
+        java.nio.file.Path cacheFile = getPatternsDir().resolve(HexCastingPlusClientConfig.NUMBER_CACHE_FILE);
         try {
             Files.createDirectories(getPatternsDir());
             try (BufferedWriter writer = Files.newBufferedWriter(cacheFile, StandardCharsets.UTF_8)) {

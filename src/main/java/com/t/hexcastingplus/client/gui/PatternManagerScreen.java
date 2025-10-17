@@ -1,5 +1,6 @@
 package com.t.hexcastingplus.client.gui;
 
+import com.t.hexcastingplus.client.config.HexCastingPlusClientConfig;
 import at.petrak.hexcasting.client.gui.GuiSpellcasting;
 import com.t.hexcastingplus.common.pattern.PatternCache;
 import com.t.hexcastingplus.common.pattern.PatternStorage;
@@ -11,7 +12,12 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import at.petrak.hexcasting.api.casting.math.HexPattern;
 import org.lwjgl.glfw.GLFW;
+import java.awt.Desktop;
+import java.io.File;
+import java.io.IOException;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -27,6 +33,12 @@ public class PatternManagerScreen extends Screen {
     private Button folderLeftButton;
     private Button folderRightButton;
     private Component folderLabel;
+
+    // Hover & right-click detection on folder name
+    private int folderNameX = 0;
+    private int folderNameY = 0;
+    private int folderNameWidth = 0;
+    private int folderNameHeight = 0;
 
     // Category management
     private PatternCategory currentCategory = PatternCategory.PATTERNS;
@@ -90,11 +102,13 @@ public class PatternManagerScreen extends Screen {
     private Button emptyTrashButton;
     private long emptyTrashHoldStartTime = -1;
     private boolean isHoldingEmptyTrash = false;
-    private static final long EMPTY_TRASH_HOLD_DURATION = 2000; // 3 seconds
+    private static final long EMPTY_TRASH_HOLD_DURATION = 1000; // 1+1 seconds
     private long emptyTrashReleaseTime = -1; // For reverse animation
     private float emptyTrashMaxProgress = 0f; // Track max progress reached
     private float emptyTrashCurrentProgress = 0f; // So we don't need to recalculate
     private static final int EMPTY_TRASH_EXTRA_WIDTH = 10;
+
+    private Button openFolderButton;
 
     // =========== scroll position
     private double preservedScrollPosition = 0;
@@ -337,7 +351,7 @@ public class PatternManagerScreen extends Screen {
                         order.add(originalIndex + 1, newName);
                     } else {
                         // If not found, add based on folder type
-                        if (folder.equals(PatternStorage.TRASH_FOLDER) || folder.equals(PatternStorage.CASTED_FOLDER)) {
+                        if (folder.equals(HexCastingPlusClientConfig.TRASH_FOLDER) || folder.equals(HexCastingPlusClientConfig.CASTED_FOLDER)) {
                             // Special folders: add at top after favorites
                             int insertPos = 0;
                             List<PatternStorage.SavedPattern> allPatterns = patternList.getAllPatterns();
@@ -666,6 +680,18 @@ public class PatternManagerScreen extends Screen {
                 Component.literal("Empty Trash"),
                 button -> {});
         emptyTrashButton.visible = false;
+
+        // Folder icon button in bottom left
+        this.openFolderButton = new FolderIconButton(
+                5,  // 20 from left
+                this.height - 20 - 5, // 5 from bottom, we will do it like this cause no var
+                20,           // Square button
+                20,
+                Component.literal("📁"),  // Unicode folder icon
+                button -> openModFolder()
+        );
+
+        addRenderableWidget(openFolderButton);
         addRenderableWidget(emptyTrashButton);
 
         addRenderableWidget(saveButton);
@@ -677,6 +703,103 @@ public class PatternManagerScreen extends Screen {
 
         updatePatternList();
         updateButtonStates();
+    }
+
+    private void openModFolder() {
+        Path modFolder = HexCastingPlusClientConfig.getModDirectory();
+
+        try {
+            Files.createDirectories(modFolder);
+
+            // Try different approaches based on OS
+            String os = System.getProperty("os.name").toLowerCase();
+            File folder = modFolder.toFile();
+
+            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
+                // Use Desktop API (works on most systems)
+                Desktop.getDesktop().open(folder);
+            } else if (os.contains("win")) {
+                // Windows fallback
+                Runtime.getRuntime().exec("explorer.exe \"" + folder.getAbsolutePath() + "\"");
+            } else if (os.contains("mac")) {
+                // macOS fallback
+                Runtime.getRuntime().exec(new String[] {"open", folder.getAbsolutePath()});
+            } else if (os.contains("nix") || os.contains("nux")) {
+                // Linux fallback - try common file managers
+                try {
+                    Runtime.getRuntime().exec(new String[] {"xdg-open", folder.getAbsolutePath()});
+                } catch (IOException e1) {
+                    // Try nautilus (GNOME)
+                    try {
+                        Runtime.getRuntime().exec(new String[] {"nautilus", folder.getAbsolutePath()});
+                    } catch (IOException e2) {
+                        // Try dolphin (KDE)
+                        try {
+                            Runtime.getRuntime().exec(new String[] {"dolphin", folder.getAbsolutePath()});
+                        } catch (IOException e3) {
+                            // Try thunar (XFCE)
+                            Runtime.getRuntime().exec(new String[] {"thunar", folder.getAbsolutePath()});
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // If all else fails, at least log the path
+            if (ValidationConstants.DEBUG_ERROR) {System.out.println("Failed to open folder: " + modFolder.toString() + " " + e.getMessage());}
+
+            // Could show a message to the user with the path they can manually navigate to
+            if (this.minecraft != null && this.minecraft.player != null) {
+                this.minecraft.player.displayClientMessage(
+                        Component.literal("Could not open folder. Path: " + modFolder.toString()),
+                        false
+                );
+            }
+        }
+    }
+
+    private static class FolderIconButton extends Button {
+        private static final float ICON_SCALE = 1.9f;
+
+        public FolderIconButton(int x, int y, int width, int height, Component text, OnPress onPress) {
+            super(x, y, width, height, text, onPress, DEFAULT_NARRATION);
+        }
+
+        @Override
+        public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+            // Dark button background
+            int bgColor = this.isHovered ? 0xFF2A2A2A : 0xFF1A1A1A;
+            if (!this.active) bgColor = 0xFF0A0A0A;
+
+            guiGraphics.fill(this.getX(), this.getY(), this.getX() + this.width, this.getY() + this.height, bgColor);
+
+            // Border
+            int borderColor = this.active ? (this.isHovered ? 0xFF606060 : 0xFF404040) : 0xFF202020;
+            guiGraphics.fill(this.getX(), this.getY(), this.getX() + this.width, this.getY() + 1, borderColor);
+            guiGraphics.fill(this.getX(), this.getY() + this.height - 1, this.getX() + this.width, this.getY() + this.height, borderColor);
+            guiGraphics.fill(this.getX(), this.getY(), this.getX() + 1, this.getY() + this.height, borderColor);
+            guiGraphics.fill(this.getX() + this.width - 1, this.getY(), this.getX() + this.width, this.getY() + this.height, borderColor);
+
+            // Render scaled folder icon (only the icon, no text)
+            int iconColor = this.active ? (this.isHovered ? 0xFFe4e4e4 : 0xFF787878) : 0xFF808080;
+
+            guiGraphics.pose().pushPose();
+
+            // Calculate center position for scaling
+            float centerX = this.getX() + this.width / 2.0f;
+            float centerY = this.getY() + this.height / 2.0f;
+
+            // Translate to center, scale, then translate back
+            guiGraphics.pose().translate(centerX, centerY, 0);
+            guiGraphics.pose().scale(ICON_SCALE, ICON_SCALE, 1.0f);
+
+            // Draw the folder icon centered
+            int scaledWidth = Minecraft.getInstance().font.width("📁");
+            int scaledHeight = Minecraft.getInstance().font.lineHeight;
+            guiGraphics.drawString(Minecraft.getInstance().font, "📁", (-scaledWidth / 2), -scaledHeight / 2,
+                    iconColor, false);
+
+            guiGraphics.pose().popPose();
+        }
     }
 
     public static int getPatternItemHeight() {
@@ -959,9 +1082,9 @@ public class PatternManagerScreen extends Screen {
     public String getActualCurrentLocation() {
         switch (currentCategory) {
             case TRASH:
-                return PatternStorage.TRASH_FOLDER;
+                return HexCastingPlusClientConfig.TRASH_FOLDER;
             case CASTED:
-                return PatternStorage.CASTED_FOLDER;
+                return HexCastingPlusClientConfig.CASTED_FOLDER;
             case PATTERNS:
             default:
                 return currentFolder;
@@ -1025,8 +1148,8 @@ public class PatternManagerScreen extends Screen {
         }
 
         // Sort based on order
-        boolean isSpecialFolder = actualLocation.equals(PatternStorage.TRASH_FOLDER) ||
-                actualLocation.equals(PatternStorage.CASTED_FOLDER);
+        boolean isSpecialFolder = actualLocation.equals(HexCastingPlusClientConfig.TRASH_FOLDER) ||
+                actualLocation.equals(HexCastingPlusClientConfig.CASTED_FOLDER);
 
         Comparator<PatternStorage.SavedPattern> comparator = (a, b) -> {
             Integer indexA = orderMap.get(a.getName());
@@ -1100,7 +1223,7 @@ public class PatternManagerScreen extends Screen {
                     PatternStorage.permanentlyDeletePattern(pattern);
                 } else {
                     // Move to trash
-                    PatternStorage.movePattern(pattern, PatternStorage.TRASH_FOLDER, null);
+                    PatternStorage.movePattern(pattern, HexCastingPlusClientConfig.TRASH_FOLDER, null);
                 }
 
                 // Calculate new scroll position
@@ -1532,6 +1655,17 @@ public class PatternManagerScreen extends Screen {
             }
         }
 
+        // Handle right-click on folder name (only in PATTERNS category)
+        if (button == 1 && currentCategory == PatternCategory.PATTERNS) {
+            if (mouseX >= folderNameX && mouseX <= folderNameX + folderNameWidth &&
+                    mouseY >= folderNameY && mouseY <= folderNameY + folderNameHeight) {
+                preserveScroll();
+                returningFromDialog = true;
+                this.minecraft.setScreen(new FolderSelectorScreen(this, null, availableFolders));
+                return true;
+            }
+        }
+
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
@@ -1611,39 +1745,48 @@ public class PatternManagerScreen extends Screen {
         // Render folder label OR category name
         if (folderLeftButton != null && folderRightButton != null) {
             Component labelToRender = null;
-
             if (currentCategory == PatternCategory.PATTERNS) {
-                // Show folder name for PATTERNS
                 labelToRender = folderLabel;
             } else if (currentCategory == PatternCategory.TRASH) {
-                // Show "Trash" label
                 labelToRender = Component.literal("Trash");
             } else if (currentCategory == PatternCategory.CASTED) {
-                // Show "Casted" label
                 labelToRender = Component.literal("Casted");
             }
 
             if (labelToRender != null) {
-                // Calculate the exact center between the two buttons
                 int leftButtonEnd = folderLeftButton.getX() + folderLeftButton.getWidth();
                 int rightButtonStart = folderRightButton.getX();
                 int availableSpace = rightButtonStart - leftButtonEnd;
-                int labelWidth = this.font.width(labelToRender);
+                folderNameWidth = this.font.width(labelToRender);
+                folderNameHeight = this.font.lineHeight;
+                folderNameX = leftButtonEnd + (availableSpace - folderNameWidth) / 2;
+                folderNameY = folderNavigationY + (20 - folderNameHeight) / 2;
 
-                // Center the label in the available space between buttons
-                int labelX = leftButtonEnd + (availableSpace - labelWidth) / 2;
-                int labelY = folderNavigationY + (20 - font.lineHeight) / 2;
+                // Hover highlight (only for PATTERNS category)
+                if (currentCategory == PatternCategory.PATTERNS) {
+                    boolean isHovered = mouseX >= folderNameX && mouseX <= folderNameX + folderNameWidth &&
+                            mouseY >= folderNameY && mouseY <= folderNameY + folderNameHeight;
+                    if (isHovered) {
+                        guiGraphics.fill(
+                                folderNameX - 2,
+                                folderNameY - 1,
+                                folderNameX + folderNameWidth + 2,
+                                folderNameY + folderNameHeight + 1,
+                                0x40FFFFFF // Semi-transparent white
+                        );
+                        // Optional tooltip
+                        guiGraphics.renderTooltip(this.font, Component.literal("Right click to manage folders"), mouseX, mouseY);
+                    }
+                }
 
                 // Draw the label
-                guiGraphics.drawString(this.font, labelToRender, labelX, labelY, 0xFFFFFF);
+                guiGraphics.drawString(this.font, labelToRender, folderNameX, folderNameY, 0xFFFFFF);
 
-                // Tooltip for truncated folder names (only for PATTERNS category)
+                // Tooltip for truncated folder names
                 if (currentCategory == PatternCategory.PATTERNS &&
                         currentFolder.length() > ValidationConstants.MAX_FOLDER_NAME_LENGTH) {
-                    // Check if mouse is over the folder name area
                     if (mouseX >= leftButtonEnd && mouseX <= rightButtonStart &&
                             mouseY >= folderNavigationY && mouseY <= folderNavigationY + 20) {
-                        // Render tooltip with full folder name
                         guiGraphics.renderTooltip(this.font, Component.literal(currentFolder), mouseX, mouseY);
                     }
                 }
@@ -1657,6 +1800,13 @@ public class PatternManagerScreen extends Screen {
 
         // Render drag visuals (insertion indicators, etc.)
         dragDropManager.render(guiGraphics, mouseX, mouseY, partialTick);
+
+        if (openFolderButton != null && openFolderButton.isMouseOver(mouseX, mouseY)) {
+            Path modFolder = HexCastingPlusClientConfig.getModDirectory();
+            guiGraphics.renderTooltip(this.font,
+                    Component.literal("Open patterns folder"),
+                    mouseX, mouseY);
+        }
 
         // Render context menu ABSOLUTELY LAST - after all widgets and drag visuals
         if (contextMenu.isVisible()) {

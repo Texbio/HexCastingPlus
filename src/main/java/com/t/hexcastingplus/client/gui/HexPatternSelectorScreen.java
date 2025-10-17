@@ -251,7 +251,34 @@ public class HexPatternSelectorScreen extends Screen {
             // Ignore if method not found
         }
 
+        // Force reload of BruteforceManager cache to pick up any newly learned scrolls
+        BruteforceManager.getInstance().reloadCache();
         BruteforceManager.getInstance().ensureCacheLoaded();
+
+        // Clear and reload pattern registry to ensure it's fresh
+        try {
+            // Force PatternResolver to reinitialize
+            java.lang.reflect.Field registryField = com.t.hexcastingplus.common.pattern.PatternResolver.class
+                    .getDeclaredField("patternRegistry");
+            registryField.setAccessible(true);
+            registryField.set(null, null);
+
+            java.lang.reflect.Field cacheField = com.t.hexcastingplus.common.pattern.PatternResolver.class
+                    .getDeclaredField("angleSignatureCache");
+            cacheField.setAccessible(true);
+            cacheField.set(null, null);
+
+            com.t.hexcastingplus.common.pattern.PatternResolver.initializeRegistry();
+        } catch (Exception e) {
+            // Fallback to just initializing
+            com.t.hexcastingplus.common.pattern.PatternResolver.initializeRegistry();
+        }
+
+        // Re-extract patterns with fresh cache
+        allPatterns.clear();
+        filteredPatterns.clear();
+        extractPatternsFromHexActions();
+
         HexCastingPlusClientConfig.load();
 
         int centerX = this.width / 2;

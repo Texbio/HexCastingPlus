@@ -12,11 +12,7 @@ public class ClearPatternsMixin {
 
     @Inject(method = "handle", at = @At("HEAD"))
     private static void hexcastingplus$onClearPatternsMessage(CallbackInfo ci) {
-//        System.out.println("=== CLEAR PATTERNS MESSAGE RECEIVED ===");
-
         // Mark that we need to reset tracking on next init
         PatternTrackingHelper.markForReset();
-
-//        System.out.println("=== PATTERN CACHE CLEARED ===");
     }
 }

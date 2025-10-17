@@ -1,4 +1,3 @@
-// New file: SmoothScrollHelper.java
 package com.t.hexcastingplus.client.gui;
 
 public class SmoothScrollHelper {
@@ -18,6 +17,7 @@ public class SmoothScrollHelper {
      * @param maxScroll Maximum scroll value
      * @return New scroll position
      */
+
     public double updateSmoothScroll(double currentScroll, double maxScroll) {
         long currentTime = System.currentTimeMillis();
         float deltaTime = (currentTime - lastScrollTime) / 1000f;
